@@ -180,14 +180,7 @@ pipeline {
                 '''
             }
         }
-
-        stage('Production Approval') {
-            steps {
-                input message: 'Staging validation passed. Deploy this build to PRODUCTION?',
-                      ok: 'Deploy to Production'
-            }
-        }
-
+       
         stage('Deploy to EKS Production') {
             steps {
                 sh '''
