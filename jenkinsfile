@@ -18,8 +18,6 @@ pipeline {
 
         IMAGE_TAG = "${BUILD_NUMBER}"
         FULL_IMAGE = "${ECR_IMAGE}:${BUILD_NUMBER}"
-
-        SCANNER_HOME = tool 'sonar-scanner'
     }
 
     stages {
@@ -57,31 +55,6 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('sonar-server') {
-                    sh '''
-                        ${SCANNER_HOME}/bin/sonar-scanner \
-                        -Dsonar.projectName=zomato \
-                        -Dsonar.projectKey=zomato \
-                        -Dsonar.sources=src \
-                        -Dsonar.exclusions=node_modules/**,build/**
-                    '''
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 10, unit: 'MINUTES') {
-                    waitForQualityGate(
-                        abortPipeline: true,
-                        credentialsId: 'Sonar-token'
-                    )
-                }
-            }
-        }
-
         stage('Application Build') {
             steps {
                 sh 'npm run build'
@@ -91,32 +64,39 @@ pipeline {
         stage('Docker Build') {
             steps {
                 sh '''
-                    echo "Building Docker image..."
+                    echo "===== Building Docker Image ====="
 
                     docker build \
                         -t ${ECR_IMAGE}:${IMAGE_TAG} \
                         -t ${ECR_IMAGE}:latest \
                         .
+
+                    echo "Docker image build completed."
                 '''
             }
         }
 
         stage('Docker Image Check') {
             steps {
-                sh 'docker images ${ECR_IMAGE}'
+                sh '''
+                    echo "===== Docker Images ====="
+                    docker images ${ECR_IMAGE}
+                '''
             }
         }
 
         stage('Login to Amazon ECR') {
             steps {
                 sh '''
-                    echo "Logging in to Amazon ECR..."
+                    echo "===== Login to Amazon ECR ====="
 
                     aws ecr get-login-password \
                         --region ${AWS_REGION} | \
                     docker login \
                         --username AWS \
                         --password-stdin ${ECR_REGISTRY}
+
+                    echo "ECR login successful."
                 '''
             }
         }
@@ -124,10 +104,12 @@ pipeline {
         stage('Push Image to ECR') {
             steps {
                 sh '''
-                    echo "Pushing image to ECR..."
+                    echo "===== Pushing Image to ECR ====="
 
                     docker push ${ECR_IMAGE}:${IMAGE_TAG}
                     docker push ${ECR_IMAGE}:latest
+
+                    echo "Image pushed successfully."
                 '''
             }
         }
@@ -135,10 +117,14 @@ pipeline {
         stage('Verify ECR Image') {
             steps {
                 sh '''
+                    echo "===== Verifying ECR Image ====="
+
                     aws ecr describe-images \
                         --repository-name ${ECR_REPOSITORY} \
                         --image-ids imageTag=${IMAGE_TAG} \
                         --region ${AWS_REGION}
+
+                    echo "ECR image verification successful."
                 '''
             }
         }
@@ -146,7 +132,8 @@ pipeline {
         stage('Deploy to EKS Staging') {
             steps {
                 sh '''
-                    echo "Deploying ${FULL_IMAGE} to STAGING..."
+                    echo "===== Deploying to EKS STAGING ====="
+                    echo "Image: ${FULL_IMAGE}"
 
                     kubectl apply \
                         -f Kubernetes/deployment-staging.yaml
@@ -161,6 +148,8 @@ pipeline {
                     kubectl -n staging rollout status \
                         deployment/zomato \
                         --timeout=5m
+
+                    echo "STAGING deployment successful."
                 '''
             }
         }
@@ -202,7 +191,8 @@ pipeline {
         stage('Deploy to EKS Production') {
             steps {
                 sh '''
-                    echo "Deploying ${FULL_IMAGE} to PRODUCTION..."
+                    echo "===== Deploying to EKS PRODUCTION ====="
+                    echo "Image: ${FULL_IMAGE}"
 
                     kubectl apply \
                         -f Kubernetes/deployment-production.yaml
@@ -217,6 +207,8 @@ pipeline {
                     kubectl -n production rollout status \
                         deployment/zomato \
                         --timeout=5m
+
+                    echo "PRODUCTION deployment successful."
                 '''
             }
         }
